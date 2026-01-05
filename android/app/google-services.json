@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "734202664291",
+    "project_id": "fine-cb713",
+    "storage_bucket": "fine-cb713.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:734202664291:android:9e4b31711cf3a89d2baf56",
+        "android_client_info": {
+          "package_name": "com.example.saferoad"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGf4J5EKBJoHo40WYPTaDIm0m_oreNsQ4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
