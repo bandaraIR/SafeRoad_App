@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
+import 'package:saferoad/pages/users_pages/appeal_page.dart';
 import 'package:saferoad/pages/users_pages/payment_page.dart'; // Add this import for clipboard
 
 class UserFinesPage extends StatefulWidget {
@@ -140,6 +141,38 @@ class _UserFinesPageState extends State<UserFinesPage> {
     }
   }
 
+  // NEW METHOD: Get appeal status color
+  Color _getAppealStatusColor(String? appealStatus) {
+    if (appealStatus == null) return Colors.grey;
+
+    switch (appealStatus.toLowerCase()) {
+      case 'approved':
+        return Colors.green;
+      case 'rejected':
+        return Colors.red;
+      case 'pending':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // NEW METHOD: Get appeal status text color
+  Color _getAppealStatusTextColor(String? appealStatus) {
+    if (appealStatus == null) return Colors.grey.shade800;
+
+    switch (appealStatus.toLowerCase()) {
+      case 'approved':
+        return Colors.green.shade800;
+      case 'rejected':
+        return Colors.red.shade800;
+      case 'pending':
+        return Colors.orange.shade800;
+      default:
+        return Colors.grey.shade800;
+    }
+  }
+
   Widget _buildFineCard(Map<String, dynamic> fine, bool isDesktop) {
     final dateIssued = fine['dateIssued'] ?? 'Unknown';
     final dueDate = fine['dueDate'] ?? 'Unknown';
@@ -147,12 +180,21 @@ class _UserFinesPageState extends State<UserFinesPage> {
     final reason = fine['reason'] ?? 'Unknown Reason';
     final vehicleNumber = fine['vehicleNumber'] ?? 'Unknown';
     final status = fine['status']?.toString() ?? 'Pending';
+    final location = fine['location'] ?? 'Unknown Location';
     final policeId = fine['policeId'] ?? 'Unknown';
     final fineId = fine['fineId'] ?? 'Unknown';
     final type = fine['type'] ?? 'Manual';
+    final hasAppeal = fine['hasAppeal'] ?? false;
+    final appealStatus = fine['appealStatus']?.toString();
 
     final isOverdue = status.toLowerCase() == 'overdue';
     final isPending = status.toLowerCase() == 'pending';
+    final isAppealPending = appealStatus?.toLowerCase() == 'pending';
+    final isAppealApproved = appealStatus?.toLowerCase() == 'approved';
+    final isAppealRejected = appealStatus?.toLowerCase() == 'rejected';
+
+    final canAppeal = !hasAppeal && (isPending || isOverdue);
+    final canPay = (isPending || isOverdue) && (!hasAppeal || isAppealRejected);
 
     return Container(
       margin: EdgeInsets.symmetric(vertical: isDesktop ? 8 : 6),
@@ -179,27 +221,62 @@ class _UserFinesPageState extends State<UserFinesPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(status).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: _getStatusColor(status).withOpacity(0.3),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Fine Status Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(status).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _getStatusColor(status).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Text(
+                        status.toUpperCase(),
+                        style: TextStyle(
+                          color: _getStatusTextColor(status),
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w700,
+                          fontSize: isDesktop ? 12 : 10,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    status.toUpperCase(),
-                    style: TextStyle(
-                      color: _getStatusTextColor(status),
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.w700,
-                      fontSize: isDesktop ? 12 : 10,
-                    ),
-                  ),
+                    // Appeal Status Badge (if exists)
+                    if (hasAppeal && appealStatus != null)
+                      Container(
+                        margin: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getAppealStatusColor(
+                            appealStatus,
+                          ).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: _getAppealStatusColor(
+                              appealStatus,
+                            ).withOpacity(0.3),
+                          ),
+                        ),
+                        child: Text(
+                          'Appeal: ${appealStatus.toUpperCase()}',
+                          style: TextStyle(
+                            color: _getAppealStatusTextColor(appealStatus),
+                            fontFamily: 'Poppins',
+                            fontWeight: FontWeight.w600,
+                            fontSize: isDesktop ? 10 : 8,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 Text(
                   'LKR ${amount.toStringAsFixed(2)}',
@@ -234,12 +311,76 @@ class _UserFinesPageState extends State<UserFinesPage> {
               policeId: policeId,
               fineId: fineId,
               type: type,
+              location: location,
+              hasAppeal: hasAppeal,
+              appealStatus: appealStatus,
               isDesktop: isDesktop,
             ),
             SizedBox(height: isDesktop ? 16 : 12),
 
-            // Action buttons
-            if (isPending || isOverdue) _buildActionButtons(fineId, isDesktop),
+            // Action buttons row
+            if (canPay || canAppeal)
+              Row(
+                children: [
+                  // PAY BUTTON
+                  if (canPay)
+                    Expanded(
+                      child: Container(
+                        height: isDesktop ? 50 : 44,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.blue.shade600,
+                              Colors.blue.shade400,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PaymentPage(),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                          ),
+                          child: const Text(
+                            "Pay Now",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  if (canPay && canAppeal) SizedBox(width: isDesktop ? 12 : 8),
+
+                  // APPEAL BUTTON
+                  if (canAppeal)
+                    Container(
+                      height: isDesktop ? 50 : 44,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: IconButton(
+                        onPressed: () => _appealFine(fineId),
+                        icon: Icon(Icons.gavel, color: Colors.orange.shade700),
+                      ),
+                    ),
+                ],
+              ),
+
+            // Show appeal info if appeal exists
+            if (hasAppeal && appealStatus != null)
+              _buildAppealInfoSection(appealStatus, isDesktop),
           ],
         ),
       ),
@@ -253,6 +394,9 @@ class _UserFinesPageState extends State<UserFinesPage> {
     required String policeId,
     required String fineId,
     required String type,
+    required String location,
+    required bool hasAppeal,
+    required String? appealStatus,
     required bool isDesktop,
   }) {
     return Container(
@@ -291,6 +435,13 @@ class _UserFinesPageState extends State<UserFinesPage> {
             isDesktop: isDesktop,
           ),
           SizedBox(height: isDesktop ? 12 : 8),
+          _buildDetailRow(
+            icon: Icons.location_on,
+            label: 'Location',
+            value: location,
+            isDesktop: isDesktop,
+          ),
+          SizedBox(height: isDesktop ? 12 : 8),
           // Fine ID row with copy icon
           _buildFineIdRow(fineId, isDesktop),
           SizedBox(height: isDesktop ? 12 : 8),
@@ -300,6 +451,16 @@ class _UserFinesPageState extends State<UserFinesPage> {
             value: type,
             isDesktop: isDesktop,
           ),
+          // Appeal Status row (if exists)
+          if (hasAppeal && appealStatus != null) ...[
+            SizedBox(height: isDesktop ? 12 : 8),
+            _buildDetailRow(
+              icon: Icons.gavel,
+              label: 'Appeal Status',
+              value: appealStatus.toUpperCase(),
+              isDesktop: isDesktop,
+            ),
+          ],
         ],
       ),
     );
@@ -343,7 +504,60 @@ class _UserFinesPageState extends State<UserFinesPage> {
     );
   }
 
-  // New method for Fine ID row with copy icon
+  // NEW METHOD: Build appeal info section
+  Widget _buildAppealInfoSection(String appealStatus, bool isDesktop) {
+    IconData appealIcon;
+    Color appealColor;
+    String statusText;
+
+    switch (appealStatus.toLowerCase()) {
+      case 'approved':
+        appealIcon = Icons.check_circle;
+        appealColor = Colors.green;
+        statusText = 'Your appeal has been approved. This fine may be waived.';
+        break;
+      case 'rejected':
+        appealIcon = Icons.cancel;
+        appealColor = Colors.red;
+        statusText = 'Your appeal has been rejected. Please pay the fine.';
+        break;
+      case 'pending':
+      default:
+        appealIcon = Icons.access_time;
+        appealColor = Colors.orange;
+        statusText =
+            'Your appeal is under review. Please wait for the decision.';
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: appealColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: appealColor.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(appealIcon, color: appealColor, size: isDesktop ? 20 : 18),
+          SizedBox(width: isDesktop ? 12 : 8),
+          Expanded(
+            child: Text(
+              statusText,
+              style: TextStyle(
+                color: appealColor,
+                fontFamily: 'Poppins',
+                fontWeight: FontWeight.w600,
+                fontSize: isDesktop ? 14 : 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFineIdRow(String fineId, bool isDesktop) {
     return Row(
       children: [
@@ -552,25 +766,43 @@ class _UserFinesPageState extends State<UserFinesPage> {
   }
 
   void _appealFine(String fineId) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Appeal Fine'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Fine ID: $fineId'),
-            const SizedBox(height: 8),
-            const Text('Fine appeal functionality would go here.'),
-          ],
+    if (userLicenseNumber == null || userLicenseNumber!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('License number not found'),
+          backgroundColor: Colors.red.shade600,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+      );
+      return;
+    }
+
+    // Find the specific fine data
+    final fine = fines.firstWhere(
+      (f) => f['fineId'] == fineId,
+      orElse: () => {},
+    );
+
+    // Check if already has appeal
+    if (fine['hasAppeal'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'You have already submitted an appeal for this fine',
           ),
-        ],
+          backgroundColor: Colors.orange.shade600,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AppealPage(
+          fineId: fineId,
+          licenseNumber: userLicenseNumber!,
+          fineData: fine,
+        ),
       ),
     );
   }

@@ -290,218 +290,231 @@ class UserDashboard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // User Info Card with License Status in Bottom Left
-                    Stack(
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          height: expiryWarning != null ? 220 : 200,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Colors.blue[600]!, Colors.blue[300]!],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.blue.withOpacity(0.2),
-                                blurRadius: 10,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LicenseInfoPage(),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    licenseNumber,
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontFamily: 'Poppins',
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  Text(
-                                    idNumber,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontFamily: 'Poppins',
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ],
+                        );
+                      },
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            height: expiryWarning != null ? 220 : 200,
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Colors.blue[600]!, Colors.blue[300]!],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
                               ),
-                              const SizedBox(height: 16),
-                              Text(
-                                fullName,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontFamily: 'Poppins',
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Text(
-                                address,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontFamily: 'Poppins',
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.white70,
-                                ),
-                                softWrap: true,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-
-                              // Expiry warning
-                              if (expiryWarning != null) ...[
-                                const SizedBox(height: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: warningColor!.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: warningColor!.withOpacity(0.5),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    expiryWarning,
-                                    style: TextStyle(
-                                      color: warningColor,
-                                      fontSize: 12,
-                                      fontFamily: 'Poppins',
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.blue.withOpacity(0.2),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 5),
                                 ),
                               ],
-
-                              const Spacer(),
-
-                              // Bottom row with Status on Left and Expiry on Right
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  // Status in Bottom Left Corner
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 8,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: statusColor.withOpacity(0.9),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      statusText,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      licenseNumber,
                                       style: const TextStyle(
-                                        color: Colors.white,
+                                        fontSize: 18,
                                         fontFamily: 'Poppins',
                                         fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    Text(
+                                      idNumber,
+                                      style: const TextStyle(
                                         fontSize: 14,
+                                        fontFamily: 'Poppins',
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  fullName,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontFamily: 'Poppins',
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Text(
+                                  address,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontFamily: 'Poppins',
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.white70,
+                                  ),
+                                  softWrap: true,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+
+                                // Expiry warning
+                                if (expiryWarning != null) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: warningColor!.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: warningColor!.withOpacity(0.5),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      expiryWarning,
+                                      style: TextStyle(
+                                        color: warningColor,
+                                        fontSize: 12,
+                                        fontFamily: 'Poppins',
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
-
-                                  // Expiry Date in Bottom Right
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        'Expires:',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w400,
-                                          fontFamily: 'Poppins',
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
-                                      Text(
-                                        expiryDateString,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          fontFamily: 'Poppins',
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
                                 ],
+
+                                const Spacer(),
+
+                                // Bottom row with Status on Left and Expiry on Right
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    // Status in Bottom Left Corner
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: statusColor.withOpacity(0.9),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        statusText,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontFamily: 'Poppins',
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+
+                                    // Expiry Date in Bottom Right
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          'Expires:',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w400,
+                                            fontFamily: 'Poppins',
+                                            color: Colors.white.withOpacity(
+                                              0.8,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          expiryDateString,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            fontFamily: 'Poppins',
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Curved Line Artwork (your existing code remains the same)
+                          Positioned(
+                            top: 10,
+                            right: 10,
+                            child: Opacity(
+                              opacity: 0.5,
+                              child: CustomPaint(
+                                size: const Size(80, 80),
+                                painter: _CurvedLinePainter(),
                               ),
-                            ],
-                          ),
-                        ),
-                        // Curved Line Artwork (your existing code remains the same)
-                        Positioned(
-                          top: 10,
-                          right: 10,
-                          child: Opacity(
-                            opacity: 0.5,
-                            child: CustomPaint(
-                              size: const Size(80, 80),
-                              painter: _CurvedLinePainter(),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          bottom: 15,
-                          left: 15,
-                          child: Opacity(
-                            opacity: 0.5,
-                            child: CustomPaint(
-                              size: const Size(60, 60),
-                              painter: _WaveLinePainter(),
+                          Positioned(
+                            bottom: 15,
+                            left: 15,
+                            child: Opacity(
+                              opacity: 0.5,
+                              child: CustomPaint(
+                                size: const Size(60, 60),
+                                painter: _WaveLinePainter(),
+                              ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          top: 40,
-                          left: 20,
-                          child: Opacity(
-                            opacity: 0.4,
-                            child: CustomPaint(
-                              size: const Size(50, 50),
-                              painter: _CircleLinePainter(),
+                          Positioned(
+                            top: 40,
+                            left: 20,
+                            child: Opacity(
+                              opacity: 0.4,
+                              child: CustomPaint(
+                                size: const Size(50, 50),
+                                painter: _CircleLinePainter(),
+                              ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          top: 60,
-                          right: 40,
-                          child: Opacity(
-                            opacity: 0.4,
-                            child: CustomPaint(
-                              size: const Size(50, 50),
-                              painter: _CircleLinePainter(),
+                          Positioned(
+                            top: 60,
+                            right: 40,
+                            child: Opacity(
+                              opacity: 0.4,
+                              child: CustomPaint(
+                                size: const Size(50, 50),
+                                painter: _CircleLinePainter(),
+                              ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          bottom: 30,
-                          right: 90,
-                          child: Opacity(
-                            opacity: 0.5,
-                            child: CustomPaint(
-                              size: const Size(40, 40),
-                              painter: _SpiralLinePainter(),
+                          Positioned(
+                            bottom: 30,
+                            right: 90,
+                            child: Opacity(
+                              opacity: 0.5,
+                              child: CustomPaint(
+                                size: const Size(40, 40),
+                                painter: _SpiralLinePainter(),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 24),
 

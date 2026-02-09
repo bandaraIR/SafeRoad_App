@@ -5,6 +5,7 @@ import 'package:saferoad/pages/police_pages/check_users_page.dart';
 import 'package:saferoad/pages/police_pages/fine_history_police.dart';
 import 'package:saferoad/pages/police_pages/notification.dart';
 import 'package:saferoad/pages/police_pages/place_fine_page.dart';
+import 'package:saferoad/pages/police_pages/police_appeal_page.dart';
 import 'package:saferoad/pages/police_pages/police_profile_page.dart';
 import 'package:saferoad/pages/police_pages/vehicle_lookup_page.dart';
 import 'add_police_page.dart';
@@ -660,7 +661,7 @@ class _PoliceDashboardState extends State<PoliceDashboard>
               Icons.directions_car,
               Colors.purple,
             ),
-            _buildActionButton("Camera", Icons.camera_alt, Colors.red),
+            _buildActionButton("Appeal", Icons.gavel, Colors.red),
             _buildActionButton("Fine History", Icons.history, Colors.teal),
           ],
         ),
@@ -695,6 +696,11 @@ class _PoliceDashboardState extends State<PoliceDashboard>
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const FineHistoryPage()),
+          );
+        } else if (title == "Appeal") {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const PoliceAppealPage()),
           );
         }
       },

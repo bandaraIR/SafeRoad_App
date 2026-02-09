@@ -17,6 +17,7 @@ class _PlaceFinePageState extends State<PlaceFinePage> {
   final TextEditingController vehicleController = TextEditingController();
   final TextEditingController amountController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
+  final TextEditingController locationController = TextEditingController();
 
   DateTime? selectedDueDate;
   String policeId = "N/A";
@@ -202,8 +203,12 @@ class _PlaceFinePageState extends State<PlaceFinePage> {
     final vehicleNumber = vehicleController.text.trim();
     final reason = selectedReason!;
     final amountText = amountController.text.trim();
+    final location = locationController.text.trim();
 
-    if (licenseNumber.isEmpty || vehicleNumber.isEmpty || amountText.isEmpty) {
+    if (licenseNumber.isEmpty ||
+        vehicleNumber.isEmpty ||
+        amountText.isEmpty ||
+        location.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text("Please fill all required fields."),
@@ -298,11 +303,16 @@ class _PlaceFinePageState extends State<PlaceFinePage> {
       // 3️⃣ Generate sequential fine ID
       final fineId = await _generateFineId();
 
+      // 🔹 Get the REAL Firebase Auth UID of the user
+      final userDoc = userQuery.docs.first;
+      final String userId = userDoc.id;
+
       // 4️⃣ Save fine
       final finesRef = FirebaseFirestore.instance.collection('fines');
       final dueDate = selectedDueDate!;
-      final docRef = await finesRef.add({
+      await finesRef.add({
         'fineId': fineId, // Store the sequential fine ID
+        'userId': userId,
         'licenseNumber': licenseNumber,
         'vehicleNumber': vehicleNumber,
         'reason': reason,
@@ -312,6 +322,7 @@ class _PlaceFinePageState extends State<PlaceFinePage> {
         'email': userEmail,
         'policeId': policeId,
         'status': 'Pending',
+        'location': location,
         'type': 'Manual',
         'timestamp': FieldValue.serverTimestamp(),
       });
@@ -364,6 +375,7 @@ class _PlaceFinePageState extends State<PlaceFinePage> {
     vehicleController.clear();
     amountController.clear();
     emailController.clear();
+    locationController.clear();
     setState(() {
       selectedDueDate = null;
       selectedReason = null;
@@ -491,6 +503,13 @@ class _PlaceFinePageState extends State<PlaceFinePage> {
                               controller: vehicleController,
                               label: "Vehicle Number",
                               icon: Icons.directions_car_outlined,
+                              isDesktop: isDesktop,
+                            ),
+                            SizedBox(height: isDesktop ? 24 : 20),
+                            _buildTextField(
+                              controller: locationController,
+                              label: "Fine Location",
+                              icon: Icons.location_on_outlined,
                               isDesktop: isDesktop,
                             ),
                             SizedBox(height: isDesktop ? 24 : 20),
@@ -1005,6 +1024,7 @@ class _PlaceFinePageState extends State<PlaceFinePage> {
     vehicleController.dispose();
     amountController.dispose();
     emailController.dispose();
+    locationController.dispose();
     super.dispose();
   }
 }
