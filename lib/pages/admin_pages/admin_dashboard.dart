@@ -8,6 +8,7 @@ import 'package:saferoad/pages/admin_pages/manage_police_page.dart';
 import 'package:saferoad/pages/admin_pages/manage_users_page.dart';
 import 'package:saferoad/pages/admin_pages/report_page.dart';
 import 'package:saferoad/pages/admin_pages/requests_page.dart';
+import 'package:saferoad/pages/admin_pages/add_criminal_page.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -353,6 +354,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => const AdminReportsPage(),
+                  ),
+                );
+              },
+            ),
+            _buildActionItem(
+              icon: Icons.person_add_alt_1,
+              label: "Add Criminal",
+              color: Colors.red,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AddCriminalPage(),
                   ),
                 );
               },
