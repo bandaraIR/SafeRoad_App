@@ -57,7 +57,6 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
     try {
       final email = requestData['email'];
 
-      // Step 1: Add to police collection
       await _firestore.collection('police').add({
         'name': requestData['name'],
         'email': requestData['email'],
@@ -72,7 +71,6 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
         'lastOnline': FieldValue.serverTimestamp(),
       });
 
-      // Step 2: Pre-create Firebase Auth user (temporary password)
       try {
         await _auth.createUserWithEmailAndPassword(
           email: email,
@@ -82,7 +80,6 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
         print('Firebase Auth user already exists or error: $e');
       }
 
-      // Step 3: Update request status to approved
       await _firestore.collection('police_requests').doc(requestId).update({
         'status': 'approved',
       });
@@ -249,7 +246,6 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header row
             Row(
               children: [
                 Container(

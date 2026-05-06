@@ -203,8 +203,6 @@ class _ManagePolicePageState extends State<ManagePolicePage>
       ),
       body: CustomScrollView(
         slivers: [
-          // --- SliverAppBar removed to avoid duplication ---
-          // Search Section
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -257,7 +255,6 @@ class _ManagePolicePageState extends State<ManagePolicePage>
             ),
           ),
 
-          // Stats Section
           SliverToBoxAdapter(
             child: StreamBuilder<QuerySnapshot>(
               stream: policeCollection.snapshots(),
@@ -303,7 +300,6 @@ class _ManagePolicePageState extends State<ManagePolicePage>
             ),
           ),
 
-          // Police List
           SliverPadding(
             padding: const EdgeInsets.all(16),
             sliver: StreamBuilder<QuerySnapshot>(

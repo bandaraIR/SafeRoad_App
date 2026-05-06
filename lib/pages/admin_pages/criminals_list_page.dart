@@ -179,7 +179,6 @@ class _CriminalsListPageState extends State<CriminalsListPage> {
 
       body: Column(
         children: [
-          // ── Search + Filters ──────────────────────
           Container(
             color: Colors.grey[100],
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -284,7 +283,6 @@ class _CriminalsListPageState extends State<CriminalsListPage> {
             ),
           ),
 
-          // ── List ──────────────────────────────────
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -543,7 +541,6 @@ class _CriminalsListPageState extends State<CriminalsListPage> {
                   color: Colors.red[400]!,
                 ),
 
-                // Address (if available)
                 if ((data['address'] ?? '').toString().isNotEmpty) ...[
                   const SizedBox(height: 8),
                   _buildInfoTile(
@@ -554,7 +551,6 @@ class _CriminalsListPageState extends State<CriminalsListPage> {
                   ),
                 ],
 
-                // Description (if available)
                 if ((data['description'] ?? '').toString().isNotEmpty) ...[
                   const SizedBox(height: 8),
                   _buildInfoTile(

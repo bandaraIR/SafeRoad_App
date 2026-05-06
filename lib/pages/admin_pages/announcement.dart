@@ -659,10 +659,10 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
               ],
             ),
           )
-        /// --- Loading State ---
+        /// Loading State
         else if (isLoading)
           const Center(child: CircularProgressIndicator())
-        /// --- No Police Found ---
+        /// No Police Found
         else if (policeList.isEmpty)
           Container(
             width: width,
@@ -689,7 +689,6 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
               ],
             ),
           )
-        /// --- Multi-select Dropdown ---
         else
           Container(
             width: width,

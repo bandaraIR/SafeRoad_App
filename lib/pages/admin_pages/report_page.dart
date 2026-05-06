@@ -121,7 +121,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
           "timestamp": FieldValue.serverTimestamp(),
         });
 
-        // ✅ Show success message
+        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Row(
@@ -139,7 +139,7 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
           ),
         );
 
-        // ✅ Clear fields after submit
+        // Clear fields after submit
         _formKey.currentState!.reset();
         _clearPoliceData();
         _policeIdController.clear();
@@ -355,14 +355,14 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
                           borderSide: const BorderSide(
-                            color: Color(0xFF90CAF9), // light blue
+                            color: Color(0xFF90CAF9),
                             width: 1.5,
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
                           borderSide: const BorderSide(
-                            color: Color(0xFF1565C0), // dark blue
+                            color: Color(0xFF1565C0),
                             width: 2,
                           ),
                         ),

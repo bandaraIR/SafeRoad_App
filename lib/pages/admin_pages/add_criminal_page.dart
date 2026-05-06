@@ -69,8 +69,6 @@ class _AddCriminalPageState extends State<AddCriminalPage> {
     }
   }
 
-  // ── Submit ────────────────────────────────────────
-
   Future<void> _submitCriminal() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -234,8 +232,6 @@ class _AddCriminalPageState extends State<AddCriminalPage> {
     super.dispose();
   }
 
-  // ── Build ─────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -324,11 +320,9 @@ class _AddCriminalPageState extends State<AddCriminalPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Live banner showing current status + danger
               _buildStatusBanner(),
               const SizedBox(height: 20),
 
-              // ── Personal Information ──────────────
               _buildSectionHeader("Personal Information", Icons.person),
               const SizedBox(height: 12),
               _buildCard([
@@ -352,7 +346,6 @@ class _AddCriminalPageState extends State<AddCriminalPage> {
 
               const SizedBox(height: 20),
 
-              // ── Criminal Information ──────────────
               _buildSectionHeader("Criminal Information", Icons.gavel),
               const SizedBox(height: 12),
               _buildCard([
@@ -387,7 +380,6 @@ class _AddCriminalPageState extends State<AddCriminalPage> {
 
               const SizedBox(height: 20),
 
-              // ── Status & Risk ─────────────────────
               _buildSectionHeader("Status & Risk Assessment", Icons.shield),
               const SizedBox(height: 12),
               _buildCard([
@@ -417,8 +409,6 @@ class _AddCriminalPageState extends State<AddCriminalPage> {
       ),
     );
   }
-
-  // ── UI Helpers ────────────────────────────────────
 
   Widget _buildStatusBanner() {
     final dangerColor = _getDangerColor(_selectedDangerLevel);
