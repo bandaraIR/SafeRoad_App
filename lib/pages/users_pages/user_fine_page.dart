@@ -3,8 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:saferoad/pages/users_pages/appeal_page.dart';
-import 'package:saferoad/pages/users_pages/payment_page.dart'; // Add this import for clipboard
+import 'package:saferoad/pages/users_pages/payment_page.dart';
 
 class UserFinesPage extends StatefulWidget {
   const UserFinesPage({super.key});
@@ -17,8 +18,7 @@ class _UserFinesPageState extends State<UserFinesPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  List<Map<String, dynamic>> fines = [];
-  bool isLoading = true;
+  bool isLoadingUser = true;
   bool hasError = false;
   String errorMessage = '';
   String? userLicenseNumber;
@@ -26,95 +26,73 @@ class _UserFinesPageState extends State<UserFinesPage> {
   @override
   void initState() {
     super.initState();
-    _loadUserFines();
+    _loadUserProfile();
   }
 
-  Future<void> _loadUserFines() async {
+  Future<void> _loadUserProfile() async {
     try {
       setState(() {
-        isLoading = true;
+        isLoadingUser = true;
         hasError = false;
       });
 
       final user = _auth.currentUser;
+      debugPrint("🔥 Current user: ${user?.email}");
+
       if (user == null) {
         setState(() {
           hasError = true;
           errorMessage = 'User not logged in';
-          isLoading = false;
+          isLoadingUser = false;
         });
         return;
       }
 
-      // Get user's license number from users collection
       final userDoc = await _firestore
           .collection('users')
           .where('email', isEqualTo: user.email)
           .limit(1)
           .get();
 
+      debugPrint("🔥 User docs found: ${userDoc.docs.length}");
+
       if (userDoc.docs.isEmpty) {
         setState(() {
           hasError = true;
           errorMessage = 'User profile not found';
-          isLoading = false;
+          isLoadingUser = false;
         });
         return;
       }
 
-      userLicenseNumber = userDoc.docs.first['licenseNumber'];
+      final licenseNumber = userDoc.docs.first['licenseNumber'];
+      debugPrint("🔥 License number: $licenseNumber");
 
-      if (userLicenseNumber == null || userLicenseNumber!.isEmpty) {
+      if (licenseNumber == null || licenseNumber.toString().isEmpty) {
         setState(() {
           hasError = true;
           errorMessage = 'License number not found in profile';
-          isLoading = false;
+          isLoadingUser = false;
         });
         return;
       }
 
-      // Load fines for this license number - filter out paid fines
-      final finesQuery = await _firestore
-          .collection('fines')
-          .where('licenseNumber', isEqualTo: userLicenseNumber)
-          .get();
-
-      // Filter out paid fines and sort manually by date issued (newest first)
-      final loadedFines = finesQuery.docs
-          .map((doc) {
-            final data = doc.data();
-            return {'id': doc.id, ...data};
-          })
-          .where((fine) {
-            // Filter out paid fines - only keep pending and overdue fines
-            final status =
-                fine['status']?.toString().toLowerCase() ?? 'pending';
-            return status != 'paid';
-          })
-          .toList();
-
-      // Sort by date issued (newest first)
-      loadedFines.sort((a, b) {
-        final dateA = a['dateIssued'] ?? '';
-        final dateB = b['dateIssued'] ?? '';
-        return dateB.compareTo(dateA); // Descending order
-      });
-
       setState(() {
-        fines = loadedFines;
-        isLoading = false;
+        userLicenseNumber = licenseNumber.toString();
+        isLoadingUser = false;
       });
+
+      debugPrint("🔥 userLicenseNumber set: $userLicenseNumber");
     } catch (e) {
-      debugPrint("Error loading fines: $e");
+      debugPrint("🔥 Error loading user profile: $e");
       setState(() {
         hasError = true;
-        errorMessage = 'Failed to load fines: ${e.toString()}';
-        isLoading = false;
+        errorMessage = 'Failed to load profile: ${e.toString()}';
+        isLoadingUser = false;
       });
     }
   }
 
-  // All the UI methods remain the same as before
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'paid':
@@ -141,10 +119,8 @@ class _UserFinesPageState extends State<UserFinesPage> {
     }
   }
 
-  // NEW METHOD: Get appeal status color
   Color _getAppealStatusColor(String? appealStatus) {
     if (appealStatus == null) return Colors.grey;
-
     switch (appealStatus.toLowerCase()) {
       case 'approved':
         return Colors.green;
@@ -157,10 +133,8 @@ class _UserFinesPageState extends State<UserFinesPage> {
     }
   }
 
-  // NEW METHOD: Get appeal status text color
   Color _getAppealStatusTextColor(String? appealStatus) {
     if (appealStatus == null) return Colors.grey.shade800;
-
     switch (appealStatus.toLowerCase()) {
       case 'approved':
         return Colors.green.shade800;
@@ -171,6 +145,136 @@ class _UserFinesPageState extends State<UserFinesPage> {
       default:
         return Colors.grey.shade800;
     }
+  }
+
+  Widget _buildEvidenceImage(String? imageUrl, bool isDesktop) {
+    debugPrint("🖼️ imageUrl received: $imageUrl");
+    if (imageUrl == null || imageUrl.isEmpty) {
+      debugPrint("🖼️ imageUrl is NULL — hiding section");
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: isDesktop ? 16 : 12),
+        Row(
+          children: [
+            Icon(Icons.camera_alt, color: Colors.red.shade600, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              'Violation Evidence',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Poppins',
+                color: Colors.red.shade700,
+                fontSize: isDesktop ? 14 : 12,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () => _showFullImage(imageUrl),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              key: ValueKey(imageUrl),
+              width: double.infinity,
+              height: isDesktop ? 220 : 180,
+              fit: BoxFit.cover,
+              cacheKey: imageUrl,
+              fadeInDuration: Duration.zero,
+              fadeOutDuration: Duration.zero,
+              placeholder: (context, url) => Container(
+                height: isDesktop ? 220 : 180,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: CircularProgressIndicator(color: Colors.blue.shade600),
+                ),
+              ),
+              errorWidget: (context, url, error) {
+                debugPrint("🖼️ Image load ERROR: $error");
+                return Container(
+                  height: isDesktop ? 220 : 180,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.broken_image,
+                        color: Colors.grey.shade400,
+                        size: 40,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Evidence image unavailable',
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontFamily: 'Poppins',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Tap image to view full screen',
+          style: TextStyle(
+            color: Colors.grey.shade500,
+            fontFamily: 'Poppins',
+            fontSize: 11,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showFullImage(String imageUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: const Text(
+              'Violation Evidence',
+              style: TextStyle(color: Colors.white, fontFamily: 'Poppins'),
+            ),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.contain,
+                placeholder: (context, url) =>
+                    const CircularProgressIndicator(color: Colors.white),
+                errorWidget: (context, url, error) => const Icon(
+                  Icons.broken_image,
+                  color: Colors.white,
+                  size: 60,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildFineCard(Map<String, dynamic> fine, bool isDesktop) {
@@ -186,11 +290,12 @@ class _UserFinesPageState extends State<UserFinesPage> {
     final type = fine['type'] ?? 'Manual';
     final hasAppeal = fine['hasAppeal'] ?? false;
     final appealStatus = fine['appealStatus']?.toString();
+    final imageUrl = (fine['imageUrl'] ?? fine['evidenceUrl'])?.toString();
+
+    debugPrint("🔥 Building fine card: $fineId | imageUrl: $imageUrl");
 
     final isOverdue = status.toLowerCase() == 'overdue';
     final isPending = status.toLowerCase() == 'pending';
-    final isAppealPending = appealStatus?.toLowerCase() == 'pending';
-    final isAppealApproved = appealStatus?.toLowerCase() == 'approved';
     final isAppealRejected = appealStatus?.toLowerCase() == 'rejected';
 
     final canAppeal = !hasAppeal && (isPending || isOverdue);
@@ -217,14 +322,12 @@ class _UserFinesPageState extends State<UserFinesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header row with status and amount
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Fine Status Badge
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -247,7 +350,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
                         ),
                       ),
                     ),
-                    // Appeal Status Badge (if exists)
                     if (hasAppeal && appealStatus != null)
                       Container(
                         margin: const EdgeInsets.only(top: 6),
@@ -290,8 +392,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
               ],
             ),
             SizedBox(height: isDesktop ? 16 : 12),
-
-            // Reason
             Text(
               reason,
               style: TextStyle(
@@ -302,8 +402,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
               ),
             ),
             SizedBox(height: isDesktop ? 12 : 8),
-
-            // Details grid
             _buildDetailGrid(
               vehicleNumber: vehicleNumber,
               dateIssued: dateIssued,
@@ -316,13 +414,11 @@ class _UserFinesPageState extends State<UserFinesPage> {
               appealStatus: appealStatus,
               isDesktop: isDesktop,
             ),
+            _buildEvidenceImage(imageUrl, isDesktop),
             SizedBox(height: isDesktop ? 16 : 12),
-
-            // Action buttons row
             if (canPay || canAppeal)
               Row(
                 children: [
-                  // PAY BUTTON
                   if (canPay)
                     Expanded(
                       child: Container(
@@ -359,10 +455,7 @@ class _UserFinesPageState extends State<UserFinesPage> {
                         ),
                       ),
                     ),
-
                   if (canPay && canAppeal) SizedBox(width: isDesktop ? 12 : 8),
-
-                  // APPEAL BUTTON
                   if (canAppeal)
                     Container(
                       height: isDesktop ? 50 : 44,
@@ -377,8 +470,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
                     ),
                 ],
               ),
-
-            // Show appeal info if appeal exists
             if (hasAppeal && appealStatus != null)
               _buildAppealInfoSection(appealStatus, isDesktop),
           ],
@@ -442,7 +533,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
             isDesktop: isDesktop,
           ),
           SizedBox(height: isDesktop ? 12 : 8),
-          // Fine ID row with copy icon
           _buildFineIdRow(fineId, isDesktop),
           SizedBox(height: isDesktop ? 12 : 8),
           _buildDetailRow(
@@ -451,7 +541,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
             value: type,
             isDesktop: isDesktop,
           ),
-          // Appeal Status row (if exists)
           if (hasAppeal && appealStatus != null) ...[
             SizedBox(height: isDesktop ? 12 : 8),
             _buildDetailRow(
@@ -504,12 +593,10 @@ class _UserFinesPageState extends State<UserFinesPage> {
     );
   }
 
-  // NEW METHOD: Build appeal info section
   Widget _buildAppealInfoSection(String appealStatus, bool isDesktop) {
     IconData appealIcon;
     Color appealColor;
     String statusText;
-
     switch (appealStatus.toLowerCase()) {
       case 'approved':
         appealIcon = Icons.check_circle;
@@ -521,15 +608,12 @@ class _UserFinesPageState extends State<UserFinesPage> {
         appealColor = Colors.red;
         statusText = 'Your appeal has been rejected. Please pay the fine.';
         break;
-      case 'pending':
       default:
         appealIcon = Icons.access_time;
         appealColor = Colors.orange;
         statusText =
             'Your appeal is under review. Please wait for the decision.';
-        break;
     }
-
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(12),
@@ -594,16 +678,16 @@ class _UserFinesPageState extends State<UserFinesPage> {
                   ),
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               InkWell(
                 onTap: () => _copyFineId(fineId),
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     color: Colors.blue.shade50,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.shade200, width: 1),
+                    border: Border.all(color: Colors.blue.shade200),
                   ),
                   child: Icon(
                     Icons.content_copy,
@@ -619,86 +703,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
     );
   }
 
-  Widget _buildActionButtons(String fineId, bool isDesktop) {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            height: isDesktop ? 50 : 44,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.blue.shade600, Colors.blue.shade400],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.blue.shade300,
-                  blurRadius: 6,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => PaymentPage()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.payment,
-                    color: Colors.white,
-                    size: isDesktop ? 20 : 18,
-                  ),
-                  SizedBox(width: isDesktop ? 8 : 6),
-                  Text(
-                    'Pay Now',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.w700,
-                      fontSize: isDesktop ? 16 : 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        SizedBox(width: isDesktop ? 12 : 8),
-        Container(
-          height: isDesktop ? 50 : 44,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: IconButton(
-            onPressed: () => _appealFine(fineId),
-            icon: Icon(
-              Icons.gavel,
-              color: Colors.orange.shade700,
-              size: isDesktop ? 20 : 18,
-            ),
-            tooltip: 'Appeal Fine',
-          ),
-        ),
-      ],
-    );
-  }
-
   String _formatDate(String dateString) {
     try {
       final date = DateFormat('yyyy-MM-dd').parse(dateString);
@@ -708,12 +712,9 @@ class _UserFinesPageState extends State<UserFinesPage> {
     }
   }
 
-  // Copy Fine ID to clipboard
   void _copyFineId(String fineId) async {
     try {
       await Clipboard.setData(ClipboardData(text: fineId));
-
-      // Show snackbar feedback
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Fine ID "$fineId" copied to clipboard'),
@@ -726,10 +727,9 @@ class _UserFinesPageState extends State<UserFinesPage> {
         ),
       );
     } catch (e) {
-      // Show error snackbar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to copy Fine ID'),
+          content: const Text('Failed to copy Fine ID'),
           backgroundColor: Colors.red.shade600,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -739,30 +739,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
         ),
       );
     }
-  }
-
-  void _payFine(String fineId) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Pay Fine'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Fine ID: $fineId'),
-            const SizedBox(height: 8),
-            const Text('Payment integration would go here.'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _appealFine(String fineId) {
@@ -775,54 +751,16 @@ class _UserFinesPageState extends State<UserFinesPage> {
       );
       return;
     }
-
-    // Find the specific fine data
-    final fine = fines.firstWhere(
-      (f) => f['fineId'] == fineId,
-      orElse: () => {},
-    );
-
-    // Check if already has appeal
-    if (fine['hasAppeal'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'You have already submitted an appeal for this fine',
-          ),
-          backgroundColor: Colors.orange.shade600,
-        ),
-      );
-      return;
-    }
-
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => AppealPage(
           fineId: fineId,
           licenseNumber: userLicenseNumber!,
-          fineData: fine,
+          fineData: const {},
         ),
       ),
     );
-  }
-
-  double getTotalAmount() {
-    return fines.fold(0.0, (sum, fine) {
-      final amount = fine['amount'] ?? 0.0;
-      final status = fine['status']?.toString().toLowerCase() ?? 'pending';
-      if (status == 'pending' || status == 'overdue') {
-        return sum + amount;
-      }
-      return sum;
-    });
-  }
-
-  int getPendingFinesCount() {
-    return fines.where((fine) {
-      final status = fine['status']?.toString().toLowerCase() ?? 'pending';
-      return status == 'pending' || status == 'overdue';
-    }).length;
   }
 
   @override
@@ -867,27 +805,193 @@ class _UserFinesPageState extends State<UserFinesPage> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 8.0),
           child: IconButton(
-            icon: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 28),
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            icon: const Icon(
+              Icons.arrow_back_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+            onPressed: () => Navigator.pop(context),
           ),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _loadUserFines,
             tooltip: 'Refresh',
+            onPressed: () {
+              // Force full page rebuild — same effect as hot reload
+              Navigator.pushReplacement(
+                context,
+                PageRouteBuilder(
+                  pageBuilder: (_, __, ___) => const UserFinesPage(),
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                ),
+              );
+            },
           ),
         ],
       ),
-      body: isLoading
+      body: isLoadingUser
           ? _buildLoadingScreen()
           : hasError
           ? _buildErrorScreen()
-          : fines.isEmpty
-          ? _buildEmptyScreen()
-          : _buildFinesList(isDesktop),
+          : userLicenseNumber == null
+          ? _buildErrorScreen()
+          : _buildStreamBody(isDesktop),
+    );
+  }
+
+  Widget _buildStreamBody(bool isDesktop) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('fines')
+          .where('licenseNumber', isEqualTo: userLicenseNumber)
+          .snapshots(),
+      builder: (context, snapshot) {
+        // ── Debug ────────────────────────────────────────────────────────
+        debugPrint("🔥 Stream state: ${snapshot.connectionState}");
+        debugPrint("🔥 userLicenseNumber: $userLicenseNumber");
+        debugPrint("🔥 hasData: ${snapshot.hasData}");
+        debugPrint("🔥 docs count: ${snapshot.data?.docs.length}");
+        if (snapshot.hasError) {
+          debugPrint("🔥 Stream error: ${snapshot.error}");
+        }
+        // ─────────────────────────────────────────────────────────────────
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingScreen();
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return _buildEmptyScreen();
+        }
+
+        final fines =
+            snapshot.data!.docs
+                .map(
+                  (doc) => {
+                    'id': doc.id,
+                    ...doc.data() as Map<String, dynamic>,
+                  },
+                )
+                .where((fine) {
+                  final status =
+                      fine['status']?.toString().toLowerCase() ?? 'pending';
+                  return status != 'paid';
+                })
+                .toList()
+              ..sort((a, b) {
+                final dateA = a['dateIssued'] ?? '';
+                final dateB = b['dateIssued'] ?? '';
+                return dateB.compareTo(dateA);
+              });
+
+        debugPrint("🔥 Filtered fines count: ${fines.length}");
+
+        if (fines.isEmpty) return _buildEmptyScreen();
+
+        final totalAmount = fines.fold(0.0, (sum, fine) {
+          final amount = (fine['amount'] ?? 0.0) is int
+              ? (fine['amount'] as int).toDouble()
+              : (fine['amount'] ?? 0.0) as double;
+          final status = fine['status']?.toString().toLowerCase() ?? 'pending';
+          return (status == 'pending' || status == 'overdue')
+              ? sum + amount
+              : sum;
+        });
+
+        final pendingCount = fines.where((fine) {
+          final status = fine['status']?.toString().toLowerCase() ?? 'pending';
+          return status == 'pending' || status == 'overdue';
+        }).length;
+
+        return Column(
+          children: [
+            Container(
+              margin: EdgeInsets.all(isDesktop ? 20 : 16),
+              padding: EdgeInsets.all(isDesktop ? 24 : 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.blue.shade700, Colors.blue.shade500],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.blue.shade300,
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Total Outstanding",
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: isDesktop ? 16 : 14,
+                            fontFamily: 'Poppins',
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        SizedBox(height: isDesktop ? 8 : 6),
+                        Text(
+                          'LKR ${totalAmount.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: isDesktop ? 28 : 24,
+                            fontFamily: 'Poppins',
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        SizedBox(height: isDesktop ? 8 : 6),
+                        Text(
+                          '$pendingCount pending fine${pendingCount != 1 ? 's' : ''}',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontFamily: 'Poppins',
+                            fontSize: isDesktop ? 14 : 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.receipt_long,
+                      color: Colors.white,
+                      size: isDesktop ? 32 : 28,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: isDesktop ? 20 : 16),
+                child: ListView.builder(
+                  itemCount: fines.length,
+                  itemBuilder: (context, index) =>
+                      _buildFineCard(fines[index], isDesktop),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -970,48 +1074,23 @@ class _UserFinesPageState extends State<UserFinesPage> {
               style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 30),
-            Container(
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue.shade700, Colors.blue.shade500],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            ElevatedButton.icon(
+              onPressed: _loadUserProfile,
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              label: const Text(
+                "Try Again",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Poppins',
                 ),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.blue.shade300,
-                    blurRadius: 6,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
               ),
-              child: ElevatedButton(
-                onPressed: _loadUserFines,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade700,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.refresh, color: Colors.white),
-                    SizedBox(width: 8),
-                    Text(
-                      "Try Again",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Poppins',
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
+                minimumSize: const Size(double.infinity, 50),
               ),
             ),
           ],
@@ -1074,105 +1153,6 @@ class _UserFinesPageState extends State<UserFinesPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildFinesList(bool isDesktop) {
-    final totalAmount = getTotalAmount();
-    final pendingCount = getPendingFinesCount();
-
-    return Column(
-      children: [
-        // Summary Card
-        Container(
-          margin: EdgeInsets.all(isDesktop ? 20 : 16),
-          padding: EdgeInsets.all(isDesktop ? 24 : 20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Colors.blue.shade700, Colors.blue.shade500],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.blue.shade300,
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Total Outstanding",
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: isDesktop ? 16 : 14,
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    SizedBox(height: isDesktop ? 8 : 6),
-                    Text(
-                      'LKR ${totalAmount.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: isDesktop ? 28 : 24,
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: isDesktop ? 8 : 6),
-                    Text(
-                      '$pendingCount pending fine${pendingCount != 1 ? 's' : ''}',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
-                        fontFamily: 'Poppins',
-                        fontSize: isDesktop ? 14 : 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.receipt_long,
-                  color: Colors.white,
-                  size: isDesktop ? 32 : 28,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Fines List
-        Expanded(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: isDesktop ? 20 : 16),
-            child: RefreshIndicator(
-              onRefresh: _loadUserFines,
-              color: Colors.blue.shade700,
-              backgroundColor: Colors.white,
-              child: ListView.builder(
-                itemCount: fines.length,
-                itemBuilder: (context, index) {
-                  return _buildFineCard(fines[index], isDesktop);
-                },
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
