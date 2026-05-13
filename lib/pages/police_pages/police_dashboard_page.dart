@@ -27,7 +27,7 @@ class _PoliceDashboardState extends State<PoliceDashboard>
   String? currentUserId;
   String? policeDocId;
 
-  // Real notifications data
+  // cant use
   List<Map<String, dynamic>> _notifications = [];
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
@@ -237,6 +237,19 @@ class _PoliceDashboardState extends State<PoliceDashboard>
             setState(() => isLoading = false);
           },
         );
+    // ✅ Listen to police alerts stream (criminal wanted alerts)
+    _firestore
+        .collection('police_alerts')
+        .limit(50)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            _processPoliceAlerts(snapshot.docs);
+          },
+          onError: (error) {
+            print("❌ Police alerts stream error: $error");
+          },
+        );
   }
 
   void _processReports(List<QueryDocumentSnapshot> docs) {
@@ -300,6 +313,36 @@ class _PoliceDashboardState extends State<PoliceDashboard>
     }
 
     _updateNotificationsList(announcements, 'announcements');
+  }
+
+  void _processPoliceAlerts(List<QueryDocumentSnapshot> docs) {
+    List<Map<String, dynamic>> alerts = [];
+
+    for (var doc in docs) {
+      final data = doc.data() as Map<String, dynamic>;
+
+      final plate = data['plateNumber'] ?? 'Unknown Plate';
+      final reason = data['reason'] ?? 'Unknown';
+      final location = data['location'] ?? 'Unknown';
+      final status = data['status'] ?? 'NEW';
+
+      // Your python adds detectedAt: SERVER_TIMESTAMP
+      final detectedAt = _parseFirestoreDate(data['detectedAt']);
+
+      alerts.add({
+        'icon': Icons.local_police,
+        'title': "🚨 Wanted Vehicle Detected",
+        'message': "Plate: $plate\nReason: $reason\nLocation: $location",
+        'color': Colors.red,
+        // ✅ IMPORTANT: if timestamp is missing, keep it old so it won't come first
+        'timestamp': detectedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+        'status': status,
+        'type': 'alert',
+        'id': doc.id,
+      });
+    }
+
+    _updateNotificationsList(alerts, 'alerts');
   }
 
   void _updateNotificationsList(
@@ -745,6 +788,10 @@ class _PoliceDashboardState extends State<PoliceDashboard>
   }
 
   Widget _buildRealNotificationsSection() {
+    final sortedNotifications = List<Map<String, dynamic>>.from(_notifications);
+    sortedNotifications.sort(
+      (a, b) => b['timestamp'].compareTo(a['timestamp']),
+    );
     // Get only the last 2 notifications
     final lastTwoNotifications = _notifications.take(2).toList();
     final newNotificationsCount = _notifications.length;

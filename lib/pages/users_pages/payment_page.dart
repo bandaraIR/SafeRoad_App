@@ -1,6 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_stripe/flutter_stripe.dart' hide Card;
+import 'package:http/http.dart' as http;
 import 'package:saferoad/pages/users_pages/history_page.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+final secretKey = dotenv.env['STRIPE_SECRET_KEY'];
 
 class PaymentPage extends StatefulWidget {
   const PaymentPage({super.key});
@@ -78,9 +84,7 @@ class _PaymentPageState extends State<PaymentPage> {
         context,
       ).showSnackBar(SnackBar(content: Text("Error fetching fine: $e")));
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
     }
   }
 
@@ -96,6 +100,30 @@ class _PaymentPageState extends State<PaymentPage> {
     _licenseController.clear();
   }
 
+  // ─── Stripe: Create payment intent directly ────────────────────────────────
+  Future<String> _createPaymentIntent(double amount) async {
+    final response = await http.post(
+      Uri.parse('https://api.stripe.com/v1/payment_intents'),
+      headers: {
+        'Authorization': 'Bearer $secretKey',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: {
+        'amount': (amount * 100).toInt().toString(),
+        'currency': 'usd',
+        'automatic_payment_methods[enabled]': 'true',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['client_secret'];
+    } else {
+      throw Exception('Stripe error: ${response.body}');
+    }
+  }
+
+  // ─── Pay Now button function ───────────────────────────────────────────────
   Future<void> _makePayment() async {
     if (documentId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -119,11 +147,33 @@ class _PaymentPageState extends State<PaymentPage> {
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
+      final double amount =
+          double.tryParse(_amountController.text.trim()) ?? 0.0;
+      if (amount <= 0) throw Exception('Invalid fine amount');
+
+      // 1. Stripe payment intent create කරනවා
+      final clientSecret = await _createPaymentIntent(amount);
+
+      // 2. Payment sheet initialize කරනවා
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'SafeRoad Traffic Fines',
+          style: ThemeMode.light,
+          appearance: PaymentSheetAppearance(
+            colors: PaymentSheetAppearanceColors(primary: Colors.blue.shade700),
+            shapes: PaymentSheetShape(borderRadius: 16),
+          ),
+        ),
+      );
+
+      // 3. Stripe payment sheet show කරනවා
+      await Stripe.instance.presentPaymentSheet();
+
+      // 4. Payment success — Firestore update කරනවා
       await FirebaseFirestore.instance
           .collection('fines')
           .doc(documentId)
@@ -132,12 +182,14 @@ class _PaymentPageState extends State<PaymentPage> {
             'paymentDate': FieldValue.serverTimestamp(),
           });
 
-      await _fetchFineDetails(); // refresh after update
+      await _fetchFineDetails();
 
       setState(() {
         isLoading = false;
         fineData!['status'] = 'Paid';
       });
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -147,27 +199,46 @@ class _PaymentPageState extends State<PaymentPage> {
           duration: Duration(seconds: 2),
         ),
       );
-      // Navigate to History Page after a short delay
+
+      // History page එකට navigate කරනවා
       await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
 
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const HistoryPage()),
       );
+    } on StripeException catch (e) {
+      setState(() => isLoading = false);
+      if (e.error.code == FailureCode.Canceled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Payment cancelled."),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("❌ Payment failed: ${e.error.localizedMessage}"),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-
+      setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("❌ Payment failed: $e"),
+          content: Text("❌ Error: $e"),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
+
+  // ─── UI (ඔයාගේ original එකම) ──────────────────────────────────────────────
 
   Widget _buildInputField({
     required String label,
@@ -302,7 +373,6 @@ class _PaymentPageState extends State<PaymentPage> {
                   ],
                 ),
                 const SizedBox(height: 28),
-
                 _buildInputField(
                   label: "Email Address",
                   icon: Icons.email_rounded,
@@ -335,7 +405,6 @@ class _PaymentPageState extends State<PaymentPage> {
                   enabled: false,
                 ),
                 const SizedBox(height: 24),
-
                 // Pay Now Button
                 Container(
                   width: double.infinity,
@@ -373,32 +442,41 @@ class _PaymentPageState extends State<PaymentPage> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    onPressed: fineData?['status'] == 'Paid'
+                    onPressed: (fineData?['status'] == 'Paid' || isLoading)
                         ? null
                         : _makePayment,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          fineData?['status'] == 'Paid'
-                              ? Icons.check_circle_rounded
-                              : Icons.payment_rounded,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          fineData?['status'] == 'Paid'
-                              ? 'Payment Completed'
-                              : 'Pay Now',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                    child: isLoading
+                        ? const SizedBox(
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                fineData?['status'] == 'Paid'
+                                    ? Icons.check_circle_rounded
+                                    : Icons.payment_rounded,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                fineData?['status'] == 'Paid'
+                                    ? 'Payment Completed'
+                                    : 'Pay Now',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
               ],
@@ -463,9 +541,7 @@ class _PaymentPageState extends State<PaymentPage> {
               color: Colors.white,
               size: 28,
             ),
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
           ),
         ),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 
 class PoliceNotificationsPage extends StatefulWidget {
   const PoliceNotificationsPage({super.key});
@@ -14,97 +15,191 @@ class _PoliceNotificationsPageState extends State<PoliceNotificationsPage> {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
   String? policeId;
-  bool isLoading = true;
 
-  // Separate lists for better management
+  // FIX: Track loading per section independently.
+  // Criminal alerts load separately from policeId-based data,
+  // so they never block each other or finish early.
+  bool _loadingPoliceId = true;
+  bool _loadingAlerts = true;
+
+  bool get isLoading => _loadingPoliceId || _loadingAlerts;
+
   List<Map<String, dynamic>> _reports = [];
   List<Map<String, dynamic>> _announcements = [];
+  List<Map<String, dynamic>> _criminalAlerts = [];
+
+  StreamSubscription? _reportsSubscription;
+  StreamSubscription? _announcementsSubscription;
+  StreamSubscription? _criminalAlertsSubscription;
 
   @override
   void initState() {
     super.initState();
-    _fetchPoliceId();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startCriminalAlertsListener();
+      _fetchPoliceId();
+    });
+  }
+
+  @override
+  void dispose() {
+    _reportsSubscription?.cancel();
+    _announcementsSubscription?.cancel();
+    _criminalAlertsSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _startCriminalAlertsListener() {
+    debugPrint("Starting criminal alerts listener...");
+    _criminalAlertsSubscription?.cancel();
+
+    // FIX: Force a fresh fetch from the SERVER first (bypasses stale cache).
+    // On second app run, Firestore's local cache can return an empty snapshot
+    // before the real data arrives — Source.server skips the cache entirely.
+    _firestore
+        .collection('police_alerts')
+        .get(const GetOptions(source: Source.server))
+        .then((snapshot) {
+          debugPrint(
+            "Criminal alerts server fetch: ${snapshot.docs.length} docs",
+          );
+          if (!mounted) return;
+          setState(() {
+            _criminalAlerts = _processCriminalAlerts(snapshot.docs);
+            _loadingAlerts = false;
+          });
+
+          // After initial load, attach live listener for real-time updates
+          _criminalAlertsSubscription = _firestore
+              .collection('police_alerts')
+              .snapshots()
+              .listen((snap) {
+                if (!mounted) return;
+                setState(() {
+                  _criminalAlerts = _processCriminalAlerts(snap.docs);
+                });
+              }, onError: (e) => debugPrint("Criminal alerts live error: $e"));
+        })
+        .catchError((error) {
+          // Offline fallback: use cache/snapshots instead
+          debugPrint("Server fetch failed, falling back to stream: $error");
+          _criminalAlertsSubscription = _firestore
+              .collection('police_alerts')
+              .snapshots()
+              .listen(
+                (snap) {
+                  if (!mounted) return;
+                  setState(() {
+                    _criminalAlerts = _processCriminalAlerts(snap.docs);
+                    _loadingAlerts = false;
+                  });
+                },
+                onError: (e) {
+                  debugPrint("Criminal alerts fallback error: $e");
+                  if (mounted) setState(() => _loadingAlerts = false);
+                },
+              );
+        });
   }
 
   Future<void> _fetchPoliceId() async {
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
-        setState(() => isLoading = false);
+        if (mounted) setState(() => _loadingPoliceId = false);
         return;
       }
 
-      final doc = await _firestore
+      debugPrint("Current user email: ${currentUser.email}");
+
+      final querySnapshot = await _firestore
           .collection('police')
-          .doc(currentUser.uid)
+          .where('email', isEqualTo: currentUser.email)
+          .limit(1)
           .get();
 
-      if (doc.exists && doc.data()!.containsKey('policeId')) {
+      if (!mounted) return;
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final data = querySnapshot.docs.first.data();
+        final loadedPoliceId = data['policeId']?.toString();
+        debugPrint("Loaded policeId: $loadedPoliceId");
         setState(() {
-          policeId = doc['policeId'];
+          policeId = loadedPoliceId;
+          _loadingPoliceId = false;
         });
-        _startListeningToStreams();
+        _startPoliceSpecificListeners();
       } else {
-        setState(() => isLoading = false);
+        debugPrint("No police document found for: ${currentUser.email}");
+        setState(() => _loadingPoliceId = false);
       }
     } catch (e) {
       debugPrint("Error fetching policeId: $e");
-      setState(() => isLoading = false);
+      if (mounted) setState(() => _loadingPoliceId = false);
     }
   }
 
-  void _startListeningToStreams() {
-    // Listen to reports stream
-    _firestore
+  void _startPoliceSpecificListeners() {
+    if (policeId == null || policeId!.isEmpty) return;
+    debugPrint("Starting police-specific listeners for policeId: $policeId");
+
+    _reportsSubscription?.cancel();
+    _announcementsSubscription?.cancel();
+
+    _reportsSubscription = _firestore
         .collection('reports')
         .where('policeId', isEqualTo: policeId)
         .snapshots()
-        .listen(
-          (snapshot) {
-            debugPrint("Reports update: ${snapshot.docs.length} documents");
+        .listen((snapshot) {
+          debugPrint("Reports update: ${snapshot.docs.length} docs");
+          if (!mounted) return;
+          setState(() => _reports = _processReports(snapshot.docs));
+        }, onError: (e) => debugPrint("Reports stream error: $e"));
 
-            setState(() {
-              _reports = _processReports(snapshot.docs);
-            });
-          },
-          onError: (error) {
-            debugPrint("Reports stream error: $error");
-          },
-        );
-
-    // Listen to announcements stream
-    _firestore
+    _announcementsSubscription = _firestore
         .collection('announcements')
         .where('eligiblePoliceIds', arrayContains: policeId)
         .snapshots()
-        .listen(
-          (snapshot) {
-            debugPrint(
-              "Announcements update: ${snapshot.docs.length} documents",
-            );
-
-            setState(() {
-              _announcements = _processAnnouncements(snapshot.docs);
-              isLoading = false;
-            });
-          },
-          onError: (error) {
-            debugPrint("Announcements stream error: $error");
-            setState(() => isLoading = false);
-          },
-        );
+        .listen((snapshot) {
+          debugPrint("Announcements update: ${snapshot.docs.length} docs");
+          if (!mounted) return;
+          setState(() => _announcements = _processAnnouncements(snapshot.docs));
+        }, onError: (e) => debugPrint("Announcements stream error: $e"));
   }
+
+  void _refreshData() {
+    _reportsSubscription?.cancel();
+    _announcementsSubscription?.cancel();
+    _criminalAlertsSubscription?.cancel();
+
+    setState(() {
+      _reports = [];
+      _announcements = [];
+      _criminalAlerts = [];
+      _loadingPoliceId = policeId == null;
+      _loadingAlerts = true;
+    });
+
+    _startCriminalAlertsListener();
+
+    if (policeId != null && policeId!.isNotEmpty) {
+      _startPoliceSpecificListeners();
+    } else {
+      _fetchPoliceId();
+    }
+  }
+
+  // ─── Data processors ───────────────────────────────────────────────────────
 
   List<Map<String, dynamic>> _processReports(List<QueryDocumentSnapshot> docs) {
     List<Map<String, dynamic>> reports = [];
-
     for (var doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final email = data['email'] ?? 'Unknown';
-      final reason = data['reason'] ?? 'No reason provided';
-      final area = data['area'] ?? 'Unknown';
+      final email = data['email']?.toString() ?? 'Unknown';
+      final reason = data['reason']?.toString() ?? 'No reason provided';
+      final area = data['area']?.toString() ?? 'Unknown';
       final timestamp = _parseFirestoreDate(data['timestamp']);
-      final status = data['status'] ?? 'Pending';
+      final status = data['status']?.toString() ?? 'Pending';
 
       reports.add({
         'icon': Icons.report_problem,
@@ -114,6 +209,7 @@ class _PoliceNotificationsPageState extends State<PoliceNotificationsPage> {
         'timestamp': timestamp ?? DateTime.now(),
         'status': status,
         'type': 'report',
+        'id': doc.id,
       });
 
       if (_isUrgentReport(reason)) {
@@ -125,48 +221,86 @@ class _PoliceNotificationsPageState extends State<PoliceNotificationsPage> {
           'timestamp': timestamp ?? DateTime.now(),
           'status': 'urgent',
           'type': 'urgent_report',
+          'id': doc.id,
         });
       }
     }
-
     return reports;
   }
 
   List<Map<String, dynamic>> _processAnnouncements(
     List<QueryDocumentSnapshot> docs,
   ) {
-    List<Map<String, dynamic>> announcements = [];
-
-    for (var doc in docs) {
+    return docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
-      final area = data['area'] ?? 'Unknown';
-      final category = data['category'] ?? 'General';
-      final description = data['description'] ?? '';
-      final location = data['location'] ?? 'Unknown';
-      final createdAt = _parseFirestoreDate(data['createdAt']);
-
-      announcements.add({
+      return {
         'icon': Icons.announcement,
-        'title': "New Announcement - $category",
-        'message': "Area: $area\nLocation: $location\nDetails: $description",
+        'title': "New Announcement - ${data['category'] ?? 'General'}",
+        'message':
+            "Area: ${data['area'] ?? 'Unknown'}\nLocation: ${data['location'] ?? 'Unknown'}\nDetails: ${data['description'] ?? ''}",
         'color': Colors.blue,
-        'timestamp': createdAt ?? DateTime.now(),
+        'timestamp': _parseFirestoreDate(data['createdAt']) ?? DateTime.now(),
         'status': 'info',
         'type': 'announcement',
         'id': doc.id,
-      });
-    }
-
-    return announcements;
+      };
+    }).toList();
   }
 
-  /// Safely parse Firestore date (handles Timestamp or String)
+  List<Map<String, dynamic>> _processCriminalAlerts(
+    List<QueryDocumentSnapshot> docs,
+  ) {
+    return docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final plate =
+          data['plateNumber']?.toString() ??
+          data['plate_number']?.toString() ??
+          data['vehicleNumber']?.toString() ??
+          'Unknown';
+      final reason = data['reason']?.toString() ?? 'Unknown Crime';
+      final location =
+          data['location']?.toString() ??
+          data['cameraLocation']?.toString() ??
+          'Unknown Location';
+      final timestamp =
+          _parseFirestoreDate(data['detectedAt']) ??
+          _parseFirestoreDate(data['timestamp']) ??
+          _parseFirestoreDate(data['createdAt']);
+      final status = data['status']?.toString() ?? 'UNKNOWN';
+
+      return {
+        'icon': Icons.local_police,
+        'title': "🚨 Wanted Vehicle Detected",
+        'message': "Plate: $plate\nLocation: $location\nCrime: $reason",
+        'color': status == 'NEW' ? Colors.red : Colors.deepOrange,
+        'timestamp': timestamp ?? DateTime.now(),
+        'status': status,
+        'type': 'criminal_alert',
+        'id': doc.id,
+      };
+    }).toList();
+  }
+
   DateTime? _parseFirestoreDate(dynamic value) {
     if (value == null) return null;
     if (value is Timestamp) return value.toDate();
     if (value is String) return DateTime.tryParse(value);
     return null;
   }
+
+  bool _isUrgentReport(String reason) {
+    const urgentKeywords = [
+      'emergency',
+      'urgent',
+      'accident',
+      'crime',
+      'theft',
+      'assault',
+    ];
+    return urgentKeywords.any((k) => reason.toLowerCase().contains(k));
+  }
+
+  // ─── UI ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -180,7 +314,13 @@ class _PoliceNotificationsPageState extends State<PoliceNotificationsPage> {
     if (policeId == null) {
       return Scaffold(
         backgroundColor: Colors.grey[100],
-        body: const Center(child: Text("No Police ID Found")),
+        body: const Center(
+          child: Text(
+            "No Police ID Found\nPlease contact administrator",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Poppins'),
+          ),
+        ),
       );
     }
 
@@ -208,96 +348,35 @@ class _PoliceNotificationsPageState extends State<PoliceNotificationsPage> {
     );
   }
 
-  void _refreshData() {
-    // Manually check the current state of data
-    _debugCheckCurrentData();
-  }
-
-  void _debugCheckCurrentData() async {
-    debugPrint("=== DEBUG INFO ===");
-    debugPrint("Police ID: $policeId");
-    debugPrint("Reports count: ${_reports.length}");
-    debugPrint("Announcements count: ${_announcements.length}");
-
-    // Check announcements directly from Firestore
-    try {
-      final announcementSnapshot = await _firestore
-          .collection('announcements')
-          .where('eligiblePoliceIds', arrayContains: policeId)
-          .get();
-
-      debugPrint(
-        "Direct Firestore query - Announcements: ${announcementSnapshot.docs.length}",
-      );
-
-      for (var doc in announcementSnapshot.docs) {
-        final data = doc.data();
-        debugPrint("Announcement: ${doc.id}");
-        debugPrint("  - eligiblePoliceIds: ${data['eligiblePoliceIds']}");
-        debugPrint(
-          "  - contains policeId: ${(data['eligiblePoliceIds'] as List).contains(policeId)}",
-        );
-        debugPrint("  - data: $data");
-      }
-    } catch (e) {
-      debugPrint("Error in debug query: $e");
-    }
-
-    debugPrint("=== END DEBUG ===");
-
-    // Show snackbar with debug info
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Refreshed: ${_announcements.length} announcements, ${_reports.length} reports",
-            style: const TextStyle(fontSize: 12, fontFamily: 'Poppins'),
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-  }
-
   Widget _buildContent() {
-    final allNotifications = [..._reports, ..._announcements];
-
-    // Sort by timestamp
+    final allNotifications = [
+      ..._criminalAlerts,
+      ..._reports,
+      ..._announcements,
+    ];
     allNotifications.sort((a, b) => b['timestamp'].compareTo(a['timestamp']));
 
-    if (allNotifications.isEmpty) {
-      return _buildEmptyState();
-    }
+    if (allNotifications.isEmpty) return _buildEmptyState();
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: allNotifications.length,
-      itemBuilder: (context, index) {
-        final notif = allNotifications[index];
-        return _buildNotificationCard(
-          notif['icon'],
-          notif['title'],
-          notif['message'],
-          notif['color'],
-          notif['status'],
-          notif['timestamp'],
-          notif['type'],
-        );
-      },
-    );
-  }
-
-  bool _isUrgentReport(String reason) {
-    final urgentKeywords = [
-      'emergency',
-      'urgent',
-      'accident',
-      'crime',
-      'theft',
-      'assault',
-    ];
-    return urgentKeywords.any(
-      (keyword) => reason.toLowerCase().contains(keyword),
+    return RefreshIndicator(
+      onRefresh: () async => _refreshData(),
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: allNotifications.length,
+        itemBuilder: (context, index) {
+          final n = allNotifications[index];
+          return _buildNotificationCard(
+            n['icon'],
+            n['title'],
+            n['message'],
+            n['color'],
+            n['status'],
+            n['timestamp'],
+            n['type'],
+            n['id'],
+          );
+        },
+      ),
     );
   }
 
@@ -318,13 +397,16 @@ class _PoliceNotificationsPageState extends State<PoliceNotificationsPage> {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            "You'll see reports or announcements here soon.",
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey,
-              fontSize: 14,
-              fontFamily: 'Poppins',
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 32.0),
+            child: Text(
+              "You'll see reports, announcements, and alerts here soon.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 14,
+                fontFamily: 'Poppins',
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -346,10 +428,10 @@ class _PoliceNotificationsPageState extends State<PoliceNotificationsPage> {
     String? status,
     DateTime timestamp,
     String type,
+    String? id,
   ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -362,89 +444,138 @@ class _PoliceNotificationsPageState extends State<PoliceNotificationsPage> {
           ),
         ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _handleNotificationTap(type, id),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontFamily: 'Poppins',
-                          fontWeight: FontWeight.bold,
-                          color: color,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        type.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: color,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  message,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontFamily: 'Poppins',
-                    color: Colors.black87,
-                    height: 1.4,
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  child: Icon(icon, color: color, size: 24),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.access_time, size: 12, color: Colors.grey[500]),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatTimestamp(timestamp),
-                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                    ),
-                  ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontFamily: 'Poppins',
+                                fontWeight: FontWeight.bold,
+                                color: color,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              type.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: color,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        message,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontFamily: 'Poppins',
+                          color: Colors.black87,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time,
+                            size: 12,
+                            color: Colors.grey[500],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatTimestamp(timestamp),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                              fontFamily: 'Poppins',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final diff = now.difference(timestamp);
+  void _handleNotificationTap(String type, String? id) {
+    switch (type) {
+      case 'report':
+      case 'urgent_report':
+        break;
+      case 'announcement':
+        break;
+      case 'criminal_alert':
+        break;
+    }
+  }
 
+  void _debugCheckCurrentData() async {
+    debugPrint("=== DEBUG INFO ===");
+    debugPrint("Police ID: $policeId");
+    debugPrint("Reports: ${_reports.length}");
+    debugPrint("Announcements: ${_announcements.length}");
+    debugPrint("Criminal Alerts: ${_criminalAlerts.length}");
+    debugPrint("=== END DEBUG ===");
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Reports: ${_reports.length}, Announcements: ${_announcements.length}, Alerts: ${_criminalAlerts.length}",
+            style: const TextStyle(fontSize: 12, fontFamily: 'Poppins'),
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final diff = DateTime.now().difference(timestamp);
     if (diff.inMinutes < 1) return "Just now";
     if (diff.inHours < 1) return "${diff.inMinutes}m ago";
     if (diff.inDays < 1) return "${diff.inHours}h ago";
