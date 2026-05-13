@@ -43,7 +43,7 @@ class _HistoryPageState extends State<HistoryPage> {
         return;
       }
 
-      // Get user's license number from users collection
+      // Get user's license number from users collection.
       final userDoc = await _firestore
           .collection('users')
           .where('email', isEqualTo: user.email)
